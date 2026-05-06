@@ -1,0 +1,13 @@
+FROM apache/airflow:2.7.1-python3.10
+
+USER root
+RUN apt-get update && apt-get install -y build-essential && apt-get clean
+
+USER airflow
+# We pin urllib3 and rich to versions that satisfy both Airflow and your AI libraries
+RUN pip install --no-cache-dir \
+    "urllib3<2.0" \
+    "rich<14" \
+    feedparser \
+    opensearch-py \
+    sentence-transformers

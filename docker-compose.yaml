@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: contrarian-search
+    environment:
+      - cluster.name=contrarian-cluster
+      - node.name=contrarian-node
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    networks:
+      - contrarian-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: contrarian-cache
+    ports:
+      - "6379:6379"
+    networks:
+      - contrarian-net
+
+  postgres:
+    image: postgres:13
+    container_name: contrarian-db
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    networks:
+      - contrarian-net
+
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: contrarian-orchestrator
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - PYTHONPATH=/opt/airflow
+      - OPENSEARCH_HOST=opensearch
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      opensearch:
+        condition: service_healthy
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./app:/opt/airflow/app
+    ports:
+      - "8080:8080"
+    command: standalone
+    networks:
+      - contrarian-net
+
+networks:
+  contrarian-net:
+    driver: bridge
