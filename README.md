@@ -1,6 +1,6 @@
 # ⚖️ Contrarian: The Agentic Editorial Curator
 
-**Stop the Echo Chamber.** Most AI is engineered to find the consensus; *Contrarian* is designed to challenge it. Using a multi-agent RAG pipeline, this system retrieves data from global archives via the News API and generates non-consensus, analytical viewpoints — surfacing the "hidden resilience" or "unseen risk" in any global topic.
+Most AI is engineered to find the consensus; *Contrarian* is designed to challenge it. Using a multi-agent RAG pipeline, this system retrieves data from global archives via the News API and generates non-consensus, analytical viewpoints — surfacing the "hidden resilience" or "unseen risk" in any global topic.
 
 ---
 
