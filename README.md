@@ -6,7 +6,7 @@
 
 ## 📺 Demo
 
-[![Contrarian AI Demo] (docs/Demo.gif)
+[![Contrarian AI Demo](docs/Demo.gif)](docs/Demo.gif)
 
 > **Note:** The demo showcases the Agentic reasoning trace — watch the Researcher, Auditor, and Contrarian nodes tick through in real time, with live latency metrics for local Llama 3.2 inference.
 
