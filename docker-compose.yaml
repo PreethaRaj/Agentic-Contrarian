@@ -35,12 +35,15 @@ services:
       - contrarian-net
 
   postgres:
-    image: postgres:13
+    image: postgres:15 # Upgraded to 15 for better JSONB performance (Phase 2)
     container_name: contrarian-db
     environment:
-      - POSTGRES_USER=airflow
-      - POSTGRES_PASSWORD=airflow
-      - POSTGRES_DB=airflow
+      # These MUST match your app/db/session.py DATABASE_URL
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=contrarian_db
+    ports:
+      - "5432:5432" # Exposes the DB to your local machine
     networks:
       - contrarian-net
 
@@ -50,7 +53,8 @@ services:
       dockerfile: Dockerfile.airflow
     container_name: contrarian-orchestrator
     environment:
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      # Updated connection string to match new postgres credentials
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:password@postgres/contrarian_db
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - PYTHONPATH=/opt/airflow

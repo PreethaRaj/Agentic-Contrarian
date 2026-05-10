@@ -10,3 +10,10 @@ feedparser
 sentence-transformers
 redis
 python-dotenv
+psycopg2-binary
+sqlalchemy
+streamlit
+fpdf2
+requests
+pytest
+pytest-asyncio

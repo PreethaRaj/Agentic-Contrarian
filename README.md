@@ -1,30 +1,95 @@
-# ⚖️ Contrarian: The Agentic Editorial Curator
+# ⚖️ Agentic-Contrarian
 
-Most AI is engineered to find the consensus; *Contrarian* is designed to challenge it. Using a multi-agent RAG pipeline, this system retrieves data from global archives via the News API and generates non-consensus, analytical viewpoints — surfacing the "hidden resilience" or "unseen risk" in any global topic.
+**Most AI finds the consensus. This one challenges it.**
+
+Agentic-Contrarian is a local, privacy-first multi-agent RAG pipeline that reads global news, detects editorial blind spots, and generates a structured contrarian briefing — with every claim traced back to a real source.
+
+> *"It doesn't summarise the news. It audits it."*
 
 ---
 
 ## 📺 Demo
 
-[![Contrarian AI Demo](docs/Demo.gif)](docs/Demo.gif)
+[![Contrarian AI Demo](docs/V2-Demo.gif)](docs/Demo.gif)
 
-> **Note:** The demo showcases the Agentic reasoning trace — watch the Researcher, Auditor, and Contrarian nodes tick through in real time, with live latency metrics for local Llama 3.2 inference.
-
----
-
-## 🚀 The Vision
-
-In an era of algorithmic bias, *Contrarian* acts as a digital advocate. It doesn't just summarize the news — it audits the status quo and formulates non-obvious analytical takes grounded in real data.
-
-> *"Most AI echoes the consensus. I built this to find the hidden resilience."*
+> The v2.0 demo will show: clickable citations · evidence mapping with stance badges · PDF export · Dev mode toggle.
 
 ---
 
-## 🧩 System Architecture & Logic
+## What's new in v2.0
 
-### System Context Diagram
+| Improvement | Detail |
+|---|---|
+| ✅ Clickable citations | Every `[NEWS_X]` in the report links to the real source URL |
+| ✅ Hallucination guard | Auditor drops off-topic articles before the LLM ever sees them |
+| ✅ Stance classification | Title + body analysed separately — detects mixed-stance articles |
+| ✅ PDF export | Full briefing: report + evidence table + friction points, downloadable |
+| ✅ Domain-agnostic pipeline | Works on any topic — no hard-coded domains or example queries |
+| ✅ Evidence Mapping tab | Browse every retrieved article, filtered by stance, with source links |
+| ✅ Developer mode | Debug tab hidden by default; enable with `DEV_MODE=1` or `?dev=1` |
+| ✅ Relevance gate | 40% keyword-match threshold + exact OpenSearch query (no fuzzy noise) |
 
-This diagram defines the system boundary and shows how Contrarian interacts with the external data ecosystem.
+---
+
+## Why this exists
+
+Mainstream RAG systems are optimised for agreement — they retrieve the most popular view and amplify it. This creates three problems:
+
+1. **Echo chambers** — consensus sources dominate retrieval
+2. **Hidden risk** — dissenting signals get buried by relevance scoring
+3. **Unverifiable claims** — LLMs hallucinate sources users can't check
+
+Agentic-Contrarian addresses all three: it actively seeks non-consensus sources, classifies stance before ranking, and cites every claim with a real URL.
+
+---
+
+## How it works
+
+```
+User query
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│  Researcher Node                                     │
+│  Expands query into 13 variants across 9 categories  │
+│  (mainstream, opinion, trade, analyst, skeptical…)   │
+│  Deduplicates by URL + title                         │
+└─────────────────┬───────────────────────────────────┘
+                  │ evidence pool (up to 40 articles)
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│  Auditor Node                                        │
+│  • Relevance gate: drops articles < 40% keyword match│
+│  • Stance classifier: supportive / skeptical /       │
+│    critical / mixed / neutral                        │
+│    (title vs body disagreement → mixed)              │
+│  • Reranks by: relevance × stance diversity ×        │
+│    source diversity + contrarian boost               │
+│  • Extracts friction points (consensus vs dissent)   │
+│  • Fills empty contrarian_evidence from pool         │
+└─────────────────┬───────────────────────────────────┘
+                  │ top 12 ranked, classified articles
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│  Perspective Analyst Node                            │
+│  Identifies missing source types (trade press,       │
+│  regional outlets, analyst notes, interviews…)       │
+└─────────────────┬───────────────────────────────────┘
+                  │ blind spot list
+                  ▼
+┌─────────────────────────────────────────────────────┐
+│  Contrarian Node (Llama 3.2)                         │
+│  Generates 4-section briefing:                       │
+│  Mainstream Narrative / Contrarian View /            │
+│  Evidence / Caveats                                  │
+│  Every sentence must cite a source_id                │
+│  Post-generation topic check guards off-topic output │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## System architecture
 
 ```mermaid
 graph LR
@@ -35,158 +100,167 @@ graph LR
         Graph --> DB[(OpenSearch)]
         Graph --> LLM[Ollama / Llama 3.2]
     end
-    API_Sources[[News API & PDF Archives]] --> DB
+    RSS[[RSS Feeds — BBC, NYT, Guardian,\nEconomist, TechCrunch, Brookings…]] --> DB
 ```
 
 ---
 
-### Sequential Flow
+## Output format
 
-The lifecycle of a single user request, showing the hand-off between specialized agents.
+Every query returns a structured 4-section briefing:
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant F as FastAPI
-    participant G as LangGraph (Agents)
-    participant O as OpenSearch / Ollama
+```
+## Mainstream Narrative
+What most retrieved sources say about the topic [NEWS_1 · BBC].
 
-    U->>F: POST /ask (Query)
-    F->>G: Initialize AgentState
-    G->>O: Researcher: Fetch Context (News API / OpenSearch)
-    O-->>G: Return Snippets
-    G->>G: Auditor: Validate & Refine
-    G->>O: Contrarian: Generate Prose (Llama 3.2)
-    O-->>G: Return Analysis
-    G-->>F: Final State
-    F-->>U: JSON Response (Displayed in UI)
+## Contrarian View
+Non-consensus interpretation from skeptical/critical sources [NEWS_3 · ForeignPolicy].
+
+## Evidence
+Specific facts supporting the contrarian view [NEWS_2 · TechCrunch].
+
+## Caveats
+Missing evidence, underrepresented stances, and reasons the contrarian view may be wrong.
 ```
 
----
-
-### How the Nodes Work as Agents
-
-Each node in the LangGraph state machine acts as a **specialized agent** with a distinct persona, responsibility, and system prompt:
-
-| Node | Persona | Responsibility |
-|:---|:---|:---|
-| **Researcher** | Information Gatherer | Queries OpenSearch via vector similarity to retrieve the most relevant News API / PDF snippets |
-| **Auditor** | Quality Controller | Scans retrieved context for consensus bias; refines the objective before inference |
-| **Contrarian** | Writer / Analyst | Uses Llama 3.2 to synthesize a final, non-obvious analytical response grounded in the retrieved data |
-
-This is not a single-prompt chatbot — it is a modular, agentic orchestration layer where each specialist can be improved independently.
+Citations are clickable links in the dashboard. The full briefing exports as a structured PDF.
 
 ---
 
-### Data Flow: Ingestion vs. Execution
-
-| Phase | When it runs | What happens |
-|:---|:---|:---|
-| **Ingestion** | Once / periodically (batch job) | News API articles and PDFs are chunked, vectorized, and indexed into OpenSearch |
-| **Execution** | Every user query | The Researcher node performs a vector similarity search against the existing index; no re-indexing occurs |
-
-> **Key design choice:** Separating ingestion from inference ensures user queries only trigger a fast retrieval lookup, not a full re-index — minimising pipeline latency.
-
----
-
-## 🛠️ Tech Stack
+## Tech stack
 
 | Component | Technology |
-|:---|:---|
-| Multi-Agent Orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) |
-| LLM (Local, Zero-Cost) | [Ollama](https://ollama.com/) — Llama 3.2 |
-| Vector Database | [OpenSearch](https://opensearch.org/) |
-| API Layer | [FastAPI](https://fastapi.tiangolo.com/) + Uvicorn |
-| Frontend Dashboard | [Streamlit](https://streamlit.io/) (Deep Carbon Dark Mode) |
-| Data Ingestion | News API + PDF Archives |
-| Containerisation | Docker (OpenSearch) |
+|---|---|
+| Multi-agent orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) |
+| LLM — local, zero-cost | [Ollama](https://ollama.com/) — Llama 3.2 |
+| Vector + keyword search | [OpenSearch](https://opensearch.org/) |
+| API layer | [FastAPI](https://fastapi.tiangolo.com/) + Uvicorn |
+| Frontend | [Streamlit](https://streamlit.io/) — dark mode |
+| News ingestion | RSS feeds — no API key required |
+| Containerisation | Docker |
 
 ---
 
-## ⚡ Quick Start
+## Quick start
 
 ### Prerequisites
 
-- [Ollama](https://ollama.com/) installed and running locally
-- Docker (for the OpenSearch container)
-- Python 3.11+
+| Tool | Required |
+|---|---|
+| Python 3.11 | ✅ |
+| Docker Desktop | ✅ (OpenSearch + Postgres) |
+| [Ollama](https://ollama.com/) | ✅ |
 
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/your-username/contrarian.git
-cd contrarian
-pip install -r requirements.txt
-```
-
-### 2. Configure Environment
-
-Copy the example env file and add your News API key (optional):
+### One-time setup
 
 ```bash
-cp .env.example .env
+git clone https://github.com/PreethaRaj/Agentic-Contrarian.git
+cd Agentic-Contrarian
 ```
 
-### 3. Pull the LLM
+Then run the setup script — it creates the venv, installs all dependencies, pulls the LLM, starts Docker, and ingests the first batch of news:
 
-```bash
-ollama pull llama3.2
+```bat
+setup.bat
 ```
 
-### 4. Start OpenSearch (Docker)
+> `setup.bat` automates: `python -m venv venv` → `pip install -r requirements.txt` → `docker compose up -d` → `ollama pull llama3.2` → `python ingest.py`
 
-```bash
-docker-compose up -d
+### Run
+
+After setup, launch both the backend and dashboard in one step:
+
+```bat
+start.bat
 ```
 
-### 5. Run the Backend
+> `start.bat` opens two terminal windows automatically:
+> - **Terminal 1** — FastAPI backend on `http://localhost:8000`
+> - **Terminal 2** — Streamlit dashboard on `http://localhost:8501`
 
-```bash
-set PYTHONPATH=%cd%
-uvicorn app.api.main:api --reload
+Verify the backend is alive: `http://localhost:8000/health` → `{"status":"ok"}`
+
+Then open `http://localhost:8501`, enter any topic, click **Launch Deep-Dive Investigation**.
+
+### Refresh the news index
+
+Re-run any time to pull the latest articles into OpenSearch:
+
+```bat
+venv\Scripts\activate
+python ingest.py
 ```
 
-### 6. Launch the Dashboard
+### Developer mode (shows debug tab)
 
-Open a second terminal:
-
-```bash
-streamlit run app/ui/dashboard.py
+```bat
+set DEV_MODE=1
+streamlit run app\ui\dashboard.py
 ```
-
-Navigate to `http://localhost:8501` and enter your analysis query.
-
-
-#### 💡 Example Queries to Try
-
-```
-Based on recent Economist data in my index, what is a contrarian take on the current stability of global supply chains?
-```
-
-```
-Based on recent Economist data in my index, what is a contrarian take on the current wave of layoffs that are being attributed to AI?
-```
+Or append `?dev=1` to the dashboard URL without restarting.
 
 ---
 
-## 📁 Project Structure
+## How to pick a query
+
+Agentic-Contrarian works on **any topic** — the pipeline is domain-agnostic.
+
+The best queries come directly from the news sources the system reads.
+**Try this:** open any of the supported RSS feeds below, pick a headline that interests you,
+and paste the topic into the dashboard. The system will surface whether there is a contrarian.
+Example : "Britain’s Electorate Is ‘Splintering.’ Can Its System Stand the Strain?"
+
+view hiding beneath the mainstream coverage.
+
+| Source | URL |
+|---|---|
+| BBC World | https://feeds.bbci.co.uk/news/world/rss.xml |
+| The Guardian | https://www.theguardian.com/world/rss |
+| New York Times | https://rss.nytimes.com/services/xml/rss/nyt/World.xml |
+| TechCrunch | https://techcrunch.com/feed/ |
+| The Economist | https://www.economist.com/the-world-this-week/rss.xml |
+| Foreign Policy | https://foreignpolicy.com/feed/ |
+| Brookings | https://www.brookings.edu/feed/ |
+| Channel NewsAsia | https://www.channelnewsasia.com/rss-feeds/8395904 |
+
+> **Tip:** Queries with visible tension in the headline work best —
+> e.g. *"X is booming despite Y"*, *"Country splits on Z"*, *"Experts warn about W"*.
+> These already signal that a contrarian view likely exists in the index.
+
+---
+
+## News sources ingested
+
+| Category | Sources |
+|---|---|
+| Mainstream | BBC World, New York Times, The Guardian |
+| Opinion | The Economist, Foreign Policy |
+| Trade/Tech | TechCrunch |
+| Analyst | Brookings Institution, CFR |
+| Regional | Channel NewsAsia, Sky News |
+
+To add sources: open `ingest.py` and add RSS URLs to the `FEEDS` dictionary.
+
+---
+
+## Project structure
 
 ```
-contrarian/
+Agentic-Contrarian/
 ├── app/
-│   ├── api/
-│   │   └── main.py          # FastAPI endpoints
 │   ├── agents/
-│   │   └── supervisor.py    # LangGraph nodes & AgentState
-│   └── ui/
-│       └── dashboard.py     # Streamlit dark mode dashboard
-├── docs/
-│   └── architecture.png     # Static architecture assets
-├── data/
-│   ├── raw/                 # (gitignored) Raw ingested data
-│   └── processed/           # (gitignored) Vectorised output
-├── .env.example
-├── .gitignore
+│   │   ├── nodes/
+│   │   │   ├── researcher.py    # Query expansion (13 variants, 9 categories)
+│   │   │   ├── auditor.py       # Relevance gate + stance classifier + reranker
+│   │   │   ├── perspective.py   # Blind spot detection
+│   │   │   └── contrarian.py    # Briefing generation with citation enforcement
+│   │   ├── graph.py             # LangGraph wiring
+│   │   └── state.py             # AgentState TypedDict
+│   ├── api/main.py              # FastAPI endpoints
+│   ├── config.py                # All tuneable constants (thresholds, signals, variants)
+│   └── ui/dashboard.py          # Streamlit dashboard
+├── ingest.py                    # Standalone RSS ingest — no Airflow required
+├── tests/test_pipeline.py       # 30 tests, 7 domains, no live services needed
 ├── docker-compose.yml
 ├── requirements.txt
 └── README.md
@@ -194,42 +268,55 @@ contrarian/
 
 ---
 
-## 🛡️ Limitations
+## Configuration
 
-1. **Inference Latency:** Running Llama 3.2 on local CPU can result in high response times (>120s) for complex, context-heavy queries. This is a trade-off of the zero-cost, local-first deployment strategy.
-2. **Context Window Constraints:** Large PDF ingestions are currently truncated to manage local memory limits, which may reduce the depth of the retrieved context.
-3. **Infrastructure Dependency:** The system requires active local Ollama and OpenSearch instances, making it unsuitable for zero-configuration deployment out of the box.
+All pipeline tuneables live in `app/config.py` — edit once, affects the whole pipeline:
 
----
-
-## 🔭 Future Improvements
-
-1. **Streaming Architecture:** Transition from `.invoke()` to Server-Sent Events (SSE) for word-by-word UI updates, converting the latency wait into a visible, real-time "typing" experience.
-2. **Cross-Domain Ingestion:** Integrate additional datasets (e.g., labour market or financial data) to broaden the analytical scope beyond news archives.
-3. **Automated Evaluation (RAGAS):** Add a scoring node to mathematically measure "faithfulness" and "contrarian-ness" of the generated response — enabling data-driven quality assurance.
+```python
+MIN_RELEVANCE_SCORE = 0.40   # raise to reduce noise; lower to increase recall
+TOP_K_RERANKED      = 12     # articles passed to LLM
+MIN_CONTRARIAN      = 2      # minimum skeptical articles before weak-signal flag
+SOURCE_CATEGORIES   = [...]  # query expansion variants
+SKEPTICAL_SIGNALS   = {...}  # stance classification vocabulary
+```
 
 ---
 
-## 🎓 Let's Learn - 5-Day Tutorial
+## Limitations
 
-If you are new to Agentic RAG, follow this plan to go from zero to understanding the full stack:
-
-| Day | Topic | Learning Objective |
-|:---|:---|:---|
-| **Day 1** | RAG Foundations | Explore `app/api/ingest.py`. Learn how News API data is chunked, vectorised, and indexed into OpenSearch. |
-| **Day 2** | Agentic Logic | Analyse `app/agents/supervisor.py`. Understand how the LangGraph State Graph moves data between nodes. |
-| **Day 3** | State Management | Modify the `AgentState` TypedDict. Try adding a "Summary" field and passing it through the entire graph. |
-| **Day 4** | Local LLM Tuning | Experiment with the system prompt in the Contrarian node. Observe how changing the instruction changes the output's tone and specificity. |
-| **Day 5** | Full-Stack Integration | Connect a new UI metric component in `dashboard.py` to a backend field. Visualise per-node latency in the sidebar. |
+- **Inference latency:** Llama 3.2 on CPU: 60–180s per query. GPU or cloud LLM reduces this dramatically.
+- **Index freshness:** Index is static until you re-run `python ingest.py`. No live feed polling.
+- **Contrarian depth:** Limited by what RSS feeds actually publish. Niche topics may return weak contrarian coverage.
+- **No auth or rate limiting:** Not production-ready for public deployment as-is.
 
 ---
 
-## 📋 Project Status
+## Roadmap
 
-> This project is a **Production-Grade MVP**. It has structured error handling, a containerised vector database, and a multi-agent orchestration layer — but is not yet production-ready for enterprise deployment (no auth, rate limiting, or hosted LLM).
+- [ ] Streaming SSE output — word-by-word dashboard updates
+- [ ] RAGAS evaluation node — automated faithfulness + contrarian-ness scoring
+- [ ] Scheduled ingest — cron/Airflow for automatic index refresh
+- [ ] GPU-optimised inference config
+- [ ] Additional feed categories: academic preprints, financial filings, government reports
+
+---
+
+## 5-day learning path
+
+New to agentic RAG? Follow this:
+
+| Day | File | What to learn |
+|---|---|---|
+| 1 | `ingest.py` | How RSS feeds are chunked, vectorised, and indexed |
+| 2 | `app/agents/nodes/researcher.py` | Query expansion — why 13 variants, not 1 |
+| 3 | `app/agents/nodes/auditor.py` | Relevance gating, stance classification, reranking |
+| 4 | `app/agents/nodes/contrarian.py` | Prompt engineering — how to enforce citation grounding |
+| 5 | `app/config.py` | Tune the pipeline — change thresholds, observe output differences |
 
 ---
 
 <div align="center">
-  <sub>Stack: LangGraph · OpenSearch · FastAPI · Ollama (Llama 3.2) · Streamlit</sub>
+  <sub>LangGraph · OpenSearch · FastAPI · Ollama · Streamlit · Python 3.11</sub>
+  <br/>
+  <sub>Built locally. Runs privately. Cites everything.</sub>
 </div>

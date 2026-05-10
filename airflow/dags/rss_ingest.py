@@ -5,11 +5,42 @@ import feedparser
 from opensearchpy import OpenSearch
 from sentence_transformers import SentenceTransformer
 from app.search.opensearch_client import SearchClient
-from dateutil import parser 
+from dateutil import parser as dateparser
 import json
 import os
 
-# --- Step 1: Define the Functions FIRST to avoid NameErrors ---
+# --- EXPANDED FEED LIST covering multiple source categories ---
+# Trade-off: more feeds = longer ingest time. Adjust schedule_interval if needed.
+FEEDS = {
+    # Mainstream / wire
+    "mainstream": [
+        "https://feeds.bbci.co.uk/news/world/rss.xml",
+        "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+        "https://www.theguardian.com/world/rss",
+    ],
+    # Opinion / editorial
+    "opinion": [
+        "https://www.economist.com/the-world-this-week/rss.xml",
+        "https://feeds.feedburner.com/ForeignAffairs",
+        "https://foreignpolicy.com/feed/",
+    ],
+    # Trade / industry
+    "trade": [
+        "https://techcrunch.com/feed/",
+        "https://www.ft.com/rss/home/uk",          # FT (may require auth — skip gracefully)
+        "https://www.bloomberg.com/feeds/podcasts/etf.xml",  # public Bloomberg podcast feed
+    ],
+    # Analyst / think-tank
+    "analyst": [
+        "https://www.brookings.edu/feed/",
+        "https://www.cfr.org/rss.xml",
+    ],
+    # Regional / local aggregator
+    "regional": [
+        "https://www.channelnewsasia.com/rss-feeds/8395904",  # Asia regional
+        "https://feeds.skynews.com/feeds/rss/world.xml",
+    ],
+}
 
 def setup_opensearch_index():
     """Ensures the index exists with the correct HNSW mappings."""
@@ -26,57 +57,69 @@ def setup_opensearch_index():
     index_name = "news_index"
     if not client.client.indices.exists(index=index_name):
         client.client.indices.create(index=index_name, body=mapping)
-        print(f"Successfully created {index_name} with HNSW vector support.")
+        print(f"Created {index_name} with HNSW vector support.")
     else:
         print(f"Index {index_name} already exists. Skipping creation.")
 
-def ingest_rss_logic():
-    """Scrapes The Economist and stores vectorized content."""
-    feeds = ['https://www.economist.com/the-world-this-week/rss.xml']
-    client = OpenSearch([{'host': 'opensearch', 'port': 9200}])
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    
-    for url in feeds:
-        feed = feedparser.parse(url)
-        for entry in feed.entries:
-            # --- FIX: Standardize the date ---
-            try:
-                # Converts "Tue, 05 May..." to "2026-05-05T09:13:54"
-                raw_date = entry.get('published', '')
-                clean_date = parser.parse(raw_date).isoformat()
-            except Exception:
-                clean_date = datetime.now().isoformat()
-            
-            doc = {
-                'title': entry.title,
-                'link': entry.link,
-                'description': entry.description,
-                'publish_date': clean_date, # Now in ISO format
-                'vector': model.encode(entry.description).tolist()
-            }
-            client.index(index='news_index', body=doc)
-    print("Ingestion complete.")
 
-# --- Step 2: Define the Unified DAG ---
+def ingest_rss_logic():
+    """Scrapes curated multi-category feeds and stores vectorized content."""
+    os_client = OpenSearch([{'host': 'opensearch', 'port': 9200}])
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    total_indexed = 0
+
+    for category, feed_urls in FEEDS.items():
+        for url in feed_urls:
+            try:
+                feed = feedparser.parse(url)
+            except Exception as e:
+                print(f"[ingest] Failed to parse feed {url}: {e}")
+                continue
+
+            for entry in feed.entries:
+                try:
+                    raw_date = entry.get('published', '')
+                    clean_date = dateparser.parse(raw_date).isoformat() if raw_date else datetime.now().isoformat()
+                except Exception:
+                    clean_date = datetime.now().isoformat()
+
+                description = getattr(entry, 'description', '') or getattr(entry, 'summary', '') or ''
+                if not description.strip():
+                    continue
+
+                doc = {
+                    'title':           entry.get('title', ''),
+                    'link':            entry.get('link', ''),
+                    'description':     description,
+                    'publish_date':    clean_date,
+                    'source_name':     feed.feed.get('title', url),  # NEW: for reranker
+                    'source_category': category,                      # NEW: for reranker
+                    'vector':          model.encode(description).tolist(),
+                }
+                try:
+                    os_client.index(index='news_index', body=doc)
+                    total_indexed += 1
+                except Exception as e:
+                    print(f"[ingest] Index error for {entry.get('link','?')}: {e}")
+
+    print(f"[ingest] Complete. {total_indexed} docs indexed across {sum(len(v) for v in FEEDS.values())} feeds.")
+
 
 with DAG(
     'contrarian_unified_pipeline',
     start_date=datetime(2026, 1, 1),
     schedule_interval='@daily',
-    catchup=False
+    catchup=False,
 ) as dag:
 
-    # Task 1: Initialize Schema
     setup_index_task = PythonOperator(
         task_id='setup_opensearch_index',
-        python_callable=setup_opensearch_index
+        python_callable=setup_opensearch_index,
     )
 
-    # Task 2: Fetch and Vectorize
     retrieve_data_task = PythonOperator(
         task_id='fetch_and_index_rss',
-        python_callable=ingest_rss_logic
+        python_callable=ingest_rss_logic,
     )
 
-    # Sequence: Setup Index -> Then Ingest Data
     setup_index_task >> retrieve_data_task
